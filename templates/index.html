@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nuzlocke Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      margin: 0;
+      padding: 0;
+    }
+    .map {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      padding: 20px;
+    }
+    .route {
+      background: #ffffff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .route.completed {
+      background: #d4edda;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      width: 300px;
+    }
+    .close {
+      float: right;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1 style="text-align:center;">Pokémon Nuzlocke Tracker</h1>
+  <div class="map" id="map">
+    <!-- Routes will be populated by JS -->
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <span class="close" id="closeModal">&times;</span>
+      <h2 id="routeTitle"></h2>
+      <ul id="pokemonList"></ul>
+      <button id="markComplete">Mark as Complete</button>
+    </div>
+  </div>
+
+  <script>
+    const mapDiv = document.getElementById('map');
+    const modal = document.getElementById('modal');
+    const routeTitle = document.getElementById('routeTitle');
+    const pokemonList = document.getElementById('pokemonList');
+    const markComplete = document.getElementById('markComplete');
+    const closeModal = document.getElementById('closeModal');
+  
+    let currentRoute = null;
+  
+    // Fetch route data from Flask backend
+    fetch('/api/routes')
+      .then(res => res.json())
+      .then(data => {
+        data.forEach(route => {
+          const div = document.createElement('div');
+          div.classList.add('route');
+          div.id = `route-${route.id}`;
+          div.textContent = route.name;
+          if (route.completed) div.classList.add('completed');
+  
+          div.onclick = () => {
+            currentRoute = route;
+            routeTitle.textContent = route.name;
+            pokemonList.innerHTML = '';
+            route.pokemon.forEach(p => {
+              const li = document.createElement('li');
+              li.textContent = `${p.name} - ${p.rate}`;
+              pokemonList.appendChild(li);
+            });
+            modal.style.display = 'flex';
+          };
+  
+          mapDiv.appendChild(div);
+        });
+      });
+  
+    // Close modal when X is clicked
+    closeModal.onclick = () => {
+      modal.style.display = 'none';
+    };
+  
+    // Also close modal when clicking outside modal-content
+    window.onclick = (event) => {
+      if (event.target === modal) {
+        modal.style.display = 'none';
+      }
+    };
+  
+    // Mark current route as completed
+    markComplete.onclick = () => {
+      if (!currentRoute) return;
+  
+      fetch('/api/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route_id: currentRoute.id })
+      }).then(() => {
+        const routeDiv = document.getElementById(`route-${currentRoute.id}`);
+        routeDiv.classList.add('completed');
+        modal.style.display = 'none';
+      });
+    };
+  </script>
+  
+</body>
+</html>
