@@ -4,12 +4,14 @@ import time
 import re
 import os
 
+
 def clean_location_name(name):
     name = name.replace("kanto-", "").replace("-area", "")
     name = name.replace("-", " ").title()
     if "Route" in name:
         name = re.sub(r"Route (\\d+)", r"Route \\1", name)
     return name.strip()
+
 
 SUPPORTED_VERSIONS = {"red", "blue", "yellow", "firered", "leafgreen"}
 
@@ -21,27 +23,33 @@ cur.execute("DROP TABLE IF EXISTS encounters")
 cur.execute("DROP TABLE IF EXISTS routes")
 cur.execute("DROP TABLE IF EXISTS regions")
 
-cur.execute('''CREATE TABLE regions (
+cur.execute(
+    """CREATE TABLE regions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL
-)''')
+)"""
+)
 
-cur.execute('''CREATE TABLE routes (
+cur.execute(
+    """CREATE TABLE routes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     region_id INTEGER,
     completed INTEGER DEFAULT 0,
     FOREIGN KEY(region_id) REFERENCES regions(id)
-)''')
+)"""
+)
 
-cur.execute('''CREATE TABLE encounters (
+cur.execute(
+    """CREATE TABLE encounters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     route_id INTEGER,
     pokemon TEXT,
     rate TEXT,
     method TEXT,
     FOREIGN KEY(route_id) REFERENCES routes(id)
-)''')
+)"""
+)
 
 cur.execute("INSERT INTO regions (name) VALUES ('Kanto')")
 kanto_id = cur.lastrowid
@@ -59,7 +67,9 @@ for location in region_data["locations"]:
             continue
         route_names_seen.add(name)
 
-        cur.execute("INSERT INTO routes (name, region_id) VALUES (?, ?)", (name, kanto_id))
+        cur.execute(
+            "INSERT INTO routes (name, region_id) VALUES (?, ?)", (name, kanto_id)
+        )
         route_id = cur.lastrowid
 
         added = False
@@ -78,7 +88,7 @@ for location in region_data["locations"]:
                             seen.add(key)
                             cur.execute(
                                 "INSERT INTO encounters (route_id, pokemon, rate, method) VALUES (?, ?, ?, ?)",
-                                (route_id, species, f"{chance}%", method)
+                                (route_id, species, f"{chance}%", method),
                             )
                             added = True  # ✅ Important fix
 
