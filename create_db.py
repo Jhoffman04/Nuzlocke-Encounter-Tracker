@@ -14,24 +14,37 @@ def clean_location_name(name):
 
 
 SUPPORTED_VERSIONS = {"red", "blue", "yellow", "firered", "leafgreen"}
+CHECKPOINT_FILE = "data/checkpoint.txt"
 
 os.makedirs("data", exist_ok=True)
 conn = sqlite3.connect("data/encounters.db")
 cur = conn.cursor()
 
-cur.execute("DROP TABLE IF EXISTS encounters")
-cur.execute("DROP TABLE IF EXISTS routes")
-cur.execute("DROP TABLE IF EXISTS regions")
+def load_checkpoint():
+    if os.path.exists(CHECKPOINT_FILE):
+        try:
+            with open(CHECKPOINT_FILE) as f:
+                return int(f.read().strip())
+        except Exception:
+            return 0
+    return 0
+
+start_index = load_checkpoint()
+
+if start_index == 0:
+    cur.execute("DROP TABLE IF EXISTS encounters")
+    cur.execute("DROP TABLE IF EXISTS routes")
+    cur.execute("DROP TABLE IF EXISTS regions")
 
 cur.execute(
-    """CREATE TABLE regions (
+    """CREATE TABLE IF NOT EXISTS regions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL
 )"""
 )
 
 cur.execute(
-    """CREATE TABLE routes (
+    """CREATE TABLE IF NOT EXISTS routes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     region_id INTEGER,
@@ -41,7 +54,7 @@ cur.execute(
 )
 
 cur.execute(
-    """CREATE TABLE encounters (
+    """CREATE TABLE IF NOT EXISTS encounters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     route_id INTEGER,
     pokemon TEXT,
@@ -51,13 +64,21 @@ cur.execute(
 )"""
 )
 
-cur.execute("INSERT INTO regions (name) VALUES ('Kanto')")
-kanto_id = cur.lastrowid
+cur.execute("SELECT id FROM regions WHERE name = 'Kanto'")
+row = cur.fetchone()
+if row:
+    kanto_id = row[0]
+else:
+    cur.execute("INSERT INTO regions (name) VALUES ('Kanto')")
+    kanto_id = cur.lastrowid
+    conn.commit()
+
+cur.execute("SELECT name FROM routes")
+route_names_seen = {r[0] for r in cur.fetchall()}
 
 region_data = requests.get("https://pokeapi.co/api/v2/region/1").json()
-route_names_seen = set()
 
-for location in region_data["locations"]:
+for idx, location in enumerate(region_data["locations"][start_index:], start=start_index):
     loc_detail = requests.get(location["url"]).json()
     for area in loc_detail["areas"]:
         area_data = requests.get(area["url"]).json()
@@ -98,6 +119,13 @@ for location in region_data["locations"]:
 
         print(f"Processed: {name}")
         time.sleep(0.5)
+
+    with open(CHECKPOINT_FILE, "w") as f:
+        f.write(str(idx + 1))
+    conn.commit()
+
+if os.path.exists(CHECKPOINT_FILE):
+    os.remove(CHECKPOINT_FILE)
 
 conn.commit()
 conn.close()
