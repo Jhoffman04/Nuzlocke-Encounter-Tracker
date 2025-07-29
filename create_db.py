@@ -4,6 +4,8 @@ import time
 import re
 import os
 
+CHECKPOINT_FILE = "data/checkpoint.txt"
+
 REGIONS = {
     1: "Kanto",
     2: "Johto",
@@ -29,6 +31,16 @@ VERSIONS_PER_REGION = {
 }
 
 
+def load_checkpoint() -> int:
+    if os.path.exists(CHECKPOINT_FILE):
+        try:
+            with open(CHECKPOINT_FILE) as f:
+                return int(f.read().strip())
+        except Exception:
+            return 0
+    return 0
+
+
 def clean_location_name(name: str) -> str:
     # remove region prefix and -area suffix then prettify
     name = re.sub(r"^(kanto|johto|hoenn|sinnoh|unova|kalos|alola|galar|paldea)-", "", name)
@@ -43,9 +55,12 @@ os.makedirs("data", exist_ok=True)
 conn = sqlite3.connect("data/encounters.db")
 cur = conn.cursor()
 
-cur.execute("DROP TABLE IF EXISTS encounters")
-cur.execute("DROP TABLE IF EXISTS routes")
-cur.execute("DROP TABLE IF EXISTS regions")
+start_index = load_checkpoint()
+
+if start_index == 0:
+    cur.execute("DROP TABLE IF EXISTS encounters")
+    cur.execute("DROP TABLE IF EXISTS routes")
+    cur.execute("DROP TABLE IF EXISTS regions")
 
 cur.execute(
     """CREATE TABLE IF NOT EXISTS regions (
@@ -75,6 +90,7 @@ cur.execute(
 )"""
 )
 
+counter = 0
 
 for region_id, region_name in REGIONS.items():
     cur.execute("SELECT id FROM regions WHERE name = ?", (region_name,))
@@ -96,6 +112,9 @@ for region_id, region_name in REGIONS.items():
         continue
 
     for location in region_data["locations"]:
+        if counter < start_index:
+            counter += 1
+            continue
         try:
             loc_detail = requests.get(location["url"]).json()
         except Exception:
@@ -146,8 +165,14 @@ for region_id, region_name in REGIONS.items():
                 cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
                 route_names_seen.remove(name)
 
+
             print(f"Processed {region_name}: {name}")
             time.sleep(0.5)
+
+        with open(CHECKPOINT_FILE, "w") as f:
+            f.write(str(counter + 1))
+        conn.commit()
+        counter += 1
 
     conn.commit()
 
