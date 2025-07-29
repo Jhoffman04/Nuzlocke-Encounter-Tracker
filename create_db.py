@@ -4,37 +4,48 @@ import time
 import re
 import os
 
+REGIONS = {
+    1: "Kanto",
+    2: "Johto",
+    3: "Hoenn",
+    4: "Sinnoh",
+    5: "Unova",
+    6: "Kalos",
+    7: "Alola",
+    8: "Galar",
+    9: "Paldea",
+}
 
-def clean_location_name(name):
-    name = name.replace("kanto-", "").replace("-area", "")
+VERSIONS_PER_REGION = {
+    "kanto": {"red", "blue", "yellow", "firered", "leafgreen"},
+    "johto": {"gold", "silver", "crystal", "heartgold", "soulsilver"},
+    "hoenn": {"ruby", "sapphire", "emerald", "omegaruby", "alphasapphire"},
+    "sinnoh": {"diamond", "pearl", "platinum", "brilliant-diamond", "shining-pearl"},
+    "unova": {"black", "white", "black-2", "white-2"},
+    "kalos": {"x", "y"},
+    "alola": {"sun", "moon", "ultra-sun", "ultra-moon"},
+    "galar": {"sword", "shield"},
+    "paldea": {"scarlet", "violet"},
+}
+
+
+def clean_location_name(name: str) -> str:
+    # remove region prefix and -area suffix then prettify
+    name = re.sub(r"^(kanto|johto|hoenn|sinnoh|unova|kalos|alola|galar|paldea)-", "", name)
+    name = name.replace("-area", "")
     name = name.replace("-", " ").title()
     if "Route" in name:
-        name = re.sub(r"Route (\\d+)", r"Route \\1", name)
+        name = re.sub(r"Route (\d+)", r"Route \1", name)
     return name.strip()
 
-
-SUPPORTED_VERSIONS = {"red", "blue", "yellow", "firered", "leafgreen"}
-CHECKPOINT_FILE = "data/checkpoint.txt"
 
 os.makedirs("data", exist_ok=True)
 conn = sqlite3.connect("data/encounters.db")
 cur = conn.cursor()
 
-def load_checkpoint():
-    if os.path.exists(CHECKPOINT_FILE):
-        try:
-            with open(CHECKPOINT_FILE) as f:
-                return int(f.read().strip())
-        except Exception:
-            return 0
-    return 0
-
-start_index = load_checkpoint()
-
-if start_index == 0:
-    cur.execute("DROP TABLE IF EXISTS encounters")
-    cur.execute("DROP TABLE IF EXISTS routes")
-    cur.execute("DROP TABLE IF EXISTS regions")
+cur.execute("DROP TABLE IF EXISTS encounters")
+cur.execute("DROP TABLE IF EXISTS routes")
+cur.execute("DROP TABLE IF EXISTS regions")
 
 cur.execute(
     """CREATE TABLE IF NOT EXISTS regions (
@@ -64,43 +75,61 @@ cur.execute(
 )"""
 )
 
-cur.execute("SELECT id FROM regions WHERE name = 'Kanto'")
-row = cur.fetchone()
-if row:
-    kanto_id = row[0]
-else:
-    cur.execute("INSERT INTO regions (name) VALUES ('Kanto')")
-    kanto_id = cur.lastrowid
-    conn.commit()
 
-cur.execute("SELECT name FROM routes")
-route_names_seen = {r[0] for r in cur.fetchall()}
+for region_id, region_name in REGIONS.items():
+    cur.execute("SELECT id FROM regions WHERE name = ?", (region_name,))
+    row = cur.fetchone()
+    if row:
+        region_db_id = row[0]
+    else:
+        cur.execute("INSERT INTO regions (name) VALUES (?)", (region_name,))
+        region_db_id = cur.lastrowid
+        conn.commit()
 
-region_data = requests.get("https://pokeapi.co/api/v2/region/1").json()
+    cur.execute("SELECT name FROM routes WHERE region_id = ?", (region_db_id,))
+    route_names_seen = {r[0] for r in cur.fetchall()}
 
-for idx, location in enumerate(region_data["locations"][start_index:], start=start_index):
-    loc_detail = requests.get(location["url"]).json()
-    for area in loc_detail["areas"]:
-        area_data = requests.get(area["url"]).json()
-        name = clean_location_name(area_data["name"])
+    try:
+        region_data = requests.get(f"https://pokeapi.co/api/v2/region/{region_id}").json()
+    except Exception:
+        print(f"Failed to fetch data for {region_name}")
+        continue
 
-        if name in route_names_seen:
+    for location in region_data["locations"]:
+        try:
+            loc_detail = requests.get(location["url"]).json()
+        except Exception:
+            print(f"Failed to fetch location {location['name']} in {region_name}")
             continue
-        route_names_seen.add(name)
+        for area in loc_detail["areas"]:
+            try:
+                area_data = requests.get(area["url"]).json()
+            except Exception:
+                print(f"Failed to fetch area {area['name']} in {region_name}")
+                continue
+            name = clean_location_name(area_data["name"])
 
-        cur.execute(
-            "INSERT INTO routes (name, region_id) VALUES (?, ?)", (name, kanto_id)
-        )
-        route_id = cur.lastrowid
+            if name in route_names_seen:
+                continue
+            route_names_seen.add(name)
 
-        added = False
-        seen = set()
+            cur.execute(
+                "INSERT INTO routes (name, region_id) VALUES (?, ?)",
+                (name, region_db_id),
+            )
+            route_id = cur.lastrowid
 
-        for poke in area_data["pokemon_encounters"]:
-            species = poke["pokemon"]["name"].title()
-            for v in poke["version_details"]:
-                version = v["version"]["name"]
-                if version in SUPPORTED_VERSIONS:
+            added = False
+            seen = set()
+
+            allowed_versions = VERSIONS_PER_REGION.get(region_name.lower(), set())
+
+            for poke in area_data["pokemon_encounters"]:
+                species = poke["pokemon"]["name"].title()
+                for v in poke["version_details"]:
+                    version = v["version"]["name"]
+                    if allowed_versions and version not in allowed_versions:
+                        continue
                     for d in v["encounter_details"]:
                         chance = d.get("chance")
                         method = d["method"]["name"]
@@ -111,22 +140,17 @@ for idx, location in enumerate(region_data["locations"][start_index:], start=sta
                                 "INSERT INTO encounters (route_id, pokemon, rate, method) VALUES (?, ?, ?, ?)",
                                 (route_id, species, f"{chance}%", method),
                             )
-                            added = True  # ✅ Important fix
+                            added = True
 
-        if not added:
-            cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
-            route_names_seen.remove(name)
+            if not added:
+                cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
+                route_names_seen.remove(name)
 
-        print(f"Processed: {name}")
-        time.sleep(0.5)
+            print(f"Processed {region_name}: {name}")
+            time.sleep(0.5)
 
-    with open(CHECKPOINT_FILE, "w") as f:
-        f.write(str(idx + 1))
     conn.commit()
 
-if os.path.exists(CHECKPOINT_FILE):
-    os.remove(CHECKPOINT_FILE)
-
-conn.commit()
 conn.close()
-print("✅ Kanto encounter data loaded into data/encounters.db")
+print("✅ Encounter data loaded into data/encounters.db")
+
