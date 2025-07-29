@@ -4,11 +4,24 @@ import time
 import re
 import os
 
-def clean_location_name(name):
-    name = name.replace("kanto-", "").replace("-area", "")
+def clean_location_name(name: str) -> str:
+    """Normalize location names from the API for display."""
+
+    # Remove region prefixes such as ``kanto-`` or ``hoenn-`` and
+    # optional ``-area`` suffixes which appear in many API endpoints.
+    name = re.sub(
+        r"^(kanto|johto|hoenn|sinnoh|unova|kalos|alola|galar|paldea)-",
+        "",
+        name,
+    )
+    name = name.replace("-area", "")
+
+    # Replace remaining hyphens with spaces and title-case the result.
     name = name.replace("-", " ").title()
+
     if "Route" in name:
         name = re.sub(r"Route (\\d+)", r"Route \\1", name)
+
     return name.strip()
 
 SUPPORTED_VERSIONS = {"red", "blue", "yellow", "firered", "leafgreen"}
@@ -43,52 +56,57 @@ cur.execute('''CREATE TABLE encounters (
     FOREIGN KEY(route_id) REFERENCES routes(id)
 )''')
 
-cur.execute("INSERT INTO regions (name) VALUES ('Kanto')")
-kanto_id = cur.lastrowid
+regions = requests.get("https://pokeapi.co/api/v2/region?limit=100").json()["results"]
 
-region_data = requests.get("https://pokeapi.co/api/v2/region/1").json()
-route_names_seen = set()
+for reg in regions:
+    region_data = requests.get(reg["url"]).json()
+    region_name = reg["name"].title()
 
-for location in region_data["locations"]:
-    loc_detail = requests.get(location["url"]).json()
-    for area in loc_detail["areas"]:
-        area_data = requests.get(area["url"]).json()
-        name = clean_location_name(area_data["name"])
+    cur.execute("INSERT INTO regions (name) VALUES (?)", (region_name,))
+    region_id = cur.lastrowid
 
-        if name in route_names_seen:
-            continue
-        route_names_seen.add(name)
+    route_names_seen = set()
 
-        cur.execute("INSERT INTO routes (name, region_id) VALUES (?, ?)", (name, kanto_id))
-        route_id = cur.lastrowid
+    for location in region_data["locations"]:
+        loc_detail = requests.get(location["url"]).json()
+        for area in loc_detail["areas"]:
+            area_data = requests.get(area["url"]).json()
+            name = clean_location_name(area_data["name"])
 
-        added = False
-        seen = set()
+            if name in route_names_seen:
+                continue
+            route_names_seen.add(name)
 
-        for poke in area_data["pokemon_encounters"]:
-            species = poke["pokemon"]["name"].title()
-            for v in poke["version_details"]:
-                version = v["version"]["name"]
-                if version in SUPPORTED_VERSIONS:
-                    for d in v["encounter_details"]:
-                        chance = d.get("chance")
-                        method = d["method"]["name"]
-                        key = (species, chance, method)
-                        if chance and key not in seen:
-                            seen.add(key)
-                            cur.execute(
-                                "INSERT INTO encounters (route_id, pokemon, rate, method) VALUES (?, ?, ?, ?)",
-                                (route_id, species, f"{chance}%", method)
-                            )
-                            added = True  # ✅ Important fix
+            cur.execute("INSERT INTO routes (name, region_id) VALUES (?, ?)", (name, region_id))
+            route_id = cur.lastrowid
 
-        if not added:
-            cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
-            route_names_seen.remove(name)
+            added = False
+            seen = set()
 
-        print(f"Processed: {name}")
-        time.sleep(0.5)
+            for poke in area_data["pokemon_encounters"]:
+                species = poke["pokemon"]["name"].title()
+                for v in poke["version_details"]:
+                    version = v["version"]["name"]
+                    if version in SUPPORTED_VERSIONS:
+                        for d in v["encounter_details"]:
+                            chance = d.get("chance")
+                            method = d["method"]["name"]
+                            key = (species, chance, method)
+                            if chance and key not in seen:
+                                seen.add(key)
+                                cur.execute(
+                                    "INSERT INTO encounters (route_id, pokemon, rate, method) VALUES (?, ?, ?, ?)",
+                                    (route_id, species, f"{chance}%", method)
+                                )
+                                added = True  # ✅ Important fix
+
+            if not added:
+                cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
+                route_names_seen.remove(name)
+
+            print(f"Processed: {name}")
+            time.sleep(0.5)
 
 conn.commit()
 conn.close()
-print("✅ Kanto encounter data loaded into data/encounters.db")
+print("✅ Encounter data loaded into data/encounters.db")
