@@ -3,7 +3,6 @@ import sqlite3
 
 app = Flask(__name__)
 
-
 def get_routes():
     with sqlite3.connect("data/encounters.db") as conn:
         cur = conn.cursor()
@@ -32,40 +31,13 @@ def mark_complete():
         conn.commit()
     return "", 204
 
-
-    conn = sqlite3.connect("data/encounters.db")
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, completed FROM routes")
-    routes = cur.fetchall()
-    result = []
-    for r in routes:
-        cur.execute("SELECT pokemon, rate FROM encounters WHERE route_id = ?", (r[0],))
-        encounters = cur.fetchall()
-        result.append(
-            {
-                "id": r[0],
-                "name": r[1],
-                "completed": bool(r[2]),
-                "pokemon": [{"name": p[0], "rate": p[1]} for p in encounters],
-            }
-        )
-    conn.close()
-    return result
-interactive-map
-
-
 @app.route("/")
 def index():
     return render_template("index.html")
 
-
 @app.route("/api/routes")
 def api_routes():
     return jsonify(get_routes())
-
-
-
-interactive-map
 
 if __name__ == "__main__":
     app.run(debug=True)
