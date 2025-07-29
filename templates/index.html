@@ -11,23 +11,33 @@
       margin: 0;
       padding: 0;
     }
-    .map {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-      padding: 20px;
+    #mapContainer {
+      position: relative;
+      width: 800px;
+      margin: 20px auto;
     }
-    .route {
-      background: #ffffff;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 10px;
-      text-align: center;
+    #kantoMap {
+      width: 100%;
+      display: block;
+    }
+    #markers {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .marker {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: red;
       cursor: pointer;
-      transition: background 0.3s;
+      transform: translate(-50%, -50%);
     }
-    .route.completed {
-      background: #d4edda;
+    .marker.completed {
+      background: green;
     }
     .modal {
       display: none;
@@ -52,8 +62,9 @@
 </head>
 <body>
   <h1 style="text-align:center;">Pokémon Nuzlocke Tracker</h1>
-  <div class="map" id="map">
-    <!-- Routes will be populated by JS -->
+  <div id="mapContainer">
+    <img src="{{ url_for('static', filename='kanto.png') }}" id="kantoMap" alt="Kanto Map">
+    <div id="markers"></div>
   </div>
 
   <div class="modal" id="modal">
@@ -66,7 +77,7 @@
   </div>
 
   <script>
-    const mapDiv = document.getElementById('map');
+    const markersDiv = document.getElementById('markers');
     const modal = document.getElementById('modal');
     const routeTitle = document.getElementById('routeTitle');
     const pokemonList = document.getElementById('pokemonList');
@@ -79,14 +90,18 @@
     fetch('/api/routes')
       .then(res => res.json())
       .then(data => {
-        data.forEach(route => {
-          const div = document.createElement('div');
-          div.classList.add('route');
-          div.id = `route-${route.id}`;
-          div.textContent = route.name;
-          if (route.completed) div.classList.add('completed');
-  
-          div.onclick = () => {
+        data.forEach((route, idx) => {
+          const x = (idx % 16) * 50 + 25;
+          const y = Math.floor(idx / 16) * 40 + 25;
+          const marker = document.createElement('div');
+          marker.classList.add('marker');
+          marker.id = `route-${route.id}`;
+          marker.title = route.name;
+          marker.style.left = x + 'px';
+          marker.style.top = y + 'px';
+          if (route.completed) marker.classList.add('completed');
+
+          marker.onclick = () => {
             currentRoute = route;
             routeTitle.textContent = route.name;
             pokemonList.innerHTML = '';
@@ -97,8 +112,8 @@
             });
             modal.style.display = 'flex';
           };
-  
-          mapDiv.appendChild(div);
+
+          markersDiv.appendChild(marker);
         });
       });
   
@@ -123,8 +138,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ route_id: currentRoute.id })
       }).then(() => {
-        const routeDiv = document.getElementById(`route-${currentRoute.id}`);
-        routeDiv.classList.add('completed');
+        const routeMarker = document.getElementById(`route-${currentRoute.id}`);
+        routeMarker.classList.add('completed');
         modal.style.display = 'none';
       });
     };
