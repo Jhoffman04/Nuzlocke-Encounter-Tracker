@@ -86,6 +86,7 @@ cur.execute(
     pokemon TEXT,
     rate TEXT,
     method TEXT,
+    max_level INTEGER,
     FOREIGN KEY(route_id) REFERENCES routes(id)
 )"""
 )
@@ -145,6 +146,7 @@ for region_id, region_name in REGIONS.items():
 
             for poke in area_data["pokemon_encounters"]:
                 species = poke["pokemon"]["name"].title()
+                encounter_map = {}
                 for v in poke["version_details"]:
                     version = v["version"]["name"]
                     if allowed_versions and version not in allowed_versions:
@@ -153,13 +155,19 @@ for region_id, region_name in REGIONS.items():
                         chance = d.get("chance")
                         method = d["method"]["name"]
                         key = (species, chance, method)
-                        if chance and key not in seen:
-                            seen.add(key)
-                            cur.execute(
-                                "INSERT INTO encounters (route_id, pokemon, rate, method) VALUES (?, ?, ?, ?)",
-                                (route_id, species, f"{chance}%", method),
-                            )
-                            added = True
+                        if chance:
+                            level = d.get("max_level", 0)
+                            encounter_map[key] = max(level, encounter_map.get(key, 0))
+
+                for (spec, chance, method), lvl in encounter_map.items():
+                    key = (spec, chance, method)
+                    if key not in seen:
+                        seen.add(key)
+                        cur.execute(
+                            "INSERT INTO encounters (route_id, pokemon, rate, method, max_level) VALUES (?, ?, ?, ?, ?)",
+                            (route_id, spec, f"{chance}%", method, lvl),
+                        )
+                        added = True
 
             if not added:
                 cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
