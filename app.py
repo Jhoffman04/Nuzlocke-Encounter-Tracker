@@ -10,14 +10,22 @@ def get_routes():
     routes = cur.fetchall()
     result = []
     for r in routes:
-        cur.execute("SELECT pokemon, rate FROM encounters WHERE route_id = ?", (r[0],))
+        cur.execute(
+            "SELECT pokemon, rate, method FROM encounters WHERE route_id = ?",
+            (r[0],),
+        )
         encounters = cur.fetchall()
-        result.append({
-            'id': r[0],
-            'name': r[1],
-            'completed': bool(r[2]),
-            'pokemon': [{'name': p[0], 'rate': p[1]} for p in encounters]
-        })
+        result.append(
+            {
+                'id': r[0],
+                'name': r[1],
+                'completed': bool(r[2]),
+                'pokemon': [
+                    {'name': p[0], 'rate': p[1], 'method': p[2]}
+                    for p in encounters
+                ],
+            }
+        )
     conn.close()
     return result
 
