@@ -86,6 +86,7 @@ cur.execute(
     pokemon TEXT,
     rate TEXT,
     method TEXT,
+    max_level INTEGER,
     FOREIGN KEY(route_id) REFERENCES routes(id)
 )"""
 )
@@ -137,10 +138,8 @@ for region_id, region_name in REGIONS.items():
                 (name, region_db_id),
             )
             route_id = cur.lastrowid
-
             added = False
-            seen = set()
-
+            aggregates = {}
             allowed_versions = VERSIONS_PER_REGION.get(region_name.lower(), set())
 
             for poke in area_data["pokemon_encounters"]:
@@ -152,14 +151,23 @@ for region_id, region_name in REGIONS.items():
                     for d in v["encounter_details"]:
                         chance = d.get("chance")
                         method = d["method"]["name"]
-                        key = (species, chance, method)
-                        if chance and key not in seen:
-                            seen.add(key)
-                            cur.execute(
-                                "INSERT INTO encounters (route_id, pokemon, rate, method) VALUES (?, ?, ?, ?)",
-                                (route_id, species, f"{chance}%", method),
-                            )
-                            added = True
+                        if not chance:
+                            continue
+                        key = (species, method)
+                        max_level = d.get("max_level", 0)
+                        if key not in aggregates:
+                            aggregates[key] = {"rate": 0, "max_level": 0}
+                        aggregates[key]["rate"] += chance
+                        aggregates[key]["max_level"] = max(
+                            aggregates[key]["max_level"], max_level
+                        )
+
+            for (spec, method), vals in aggregates.items():
+                cur.execute(
+                    "INSERT INTO encounters (route_id, pokemon, rate, method, max_level) VALUES (?, ?, ?, ?, ?)",
+                    (route_id, spec, f"{vals['rate']}%", method, vals["max_level"]),
+                )
+                added = True
 
             if not added:
                 cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
