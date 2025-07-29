@@ -138,15 +138,12 @@ for region_id, region_name in REGIONS.items():
                 (name, region_db_id),
             )
             route_id = cur.lastrowid
-
             added = False
-
+            aggregates = {}
             allowed_versions = VERSIONS_PER_REGION.get(region_name.lower(), set())
 
             for poke in area_data["pokemon_encounters"]:
                 species = poke["pokemon"]["name"].title()
-                aggregates = {}
-
                 for v in poke["version_details"]:
                     version = v["version"]["name"]
                     if allowed_versions and version not in allowed_versions:
@@ -165,12 +162,12 @@ for region_id, region_name in REGIONS.items():
                             aggregates[key]["max_level"], max_level
                         )
 
-                for (spec, method), vals in aggregates.items():
-                    cur.execute(
-                        "INSERT INTO encounters (route_id, pokemon, rate, method, max_level) VALUES (?, ?, ?, ?, ?)",
-                        (route_id, spec, f"{vals['rate']}%", method, vals["max_level"]),
-                    )
-                    added = True
+            for (spec, method), vals in aggregates.items():
+                cur.execute(
+                    "INSERT INTO encounters (route_id, pokemon, rate, method, max_level) VALUES (?, ?, ?, ?, ?)",
+                    (route_id, spec, f"{vals['rate']}%", method, vals["max_level"]),
+                )
+                added = True
 
             if not added:
                 cur.execute("DELETE FROM routes WHERE id = ?", (route_id,))
