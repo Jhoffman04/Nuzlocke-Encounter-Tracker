@@ -148,15 +148,37 @@
           marker.style.top = y + 'px';
           if (route.completed) marker.classList.add('completed');
 
+          const formatMethod = (m) =>
+            m
+              .replace(/-/g, ' ')
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+
           marker.onclick = () => {
             currentRoute = route;
             routeTitle.textContent = route.name;
             pokemonList.innerHTML = '';
-            route.pokemon.forEach(p => {
-              const li = document.createElement('li');
-              li.textContent = `${p.name} - ${p.rate}`;
-              pokemonList.appendChild(li);
+
+            const groups = {};
+            route.pokemon.forEach((p) => {
+              if (!groups[p.method]) groups[p.method] = [];
+              groups[p.method].push(p);
             });
+
+            Object.keys(groups).forEach((method) => {
+              const methodItem = document.createElement('li');
+              methodItem.innerHTML = `<strong>${formatMethod(method)}</strong>`;
+              const subList = document.createElement('ul');
+
+              groups[method].forEach((p) => {
+                const li = document.createElement('li');
+                li.textContent = `${p.name} - ${p.rate}`;
+                subList.appendChild(li);
+              });
+
+              methodItem.appendChild(subList);
+              pokemonList.appendChild(methodItem);
+            });
+
             modal.style.display = 'flex';
           };
 
