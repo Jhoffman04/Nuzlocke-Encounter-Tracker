@@ -16,6 +16,31 @@
       width: 800px;
       margin: 20px auto;
     }
+    #routePanel {
+      position: absolute;
+      right: -220px;
+      top: 0;
+      width: 200px;
+      height: 100%;
+      overflow-y: auto;
+      background: #fff;
+      border-left: 1px solid #ccc;
+      padding: 10px;
+    }
+    #routeList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #routeList li {
+      padding: 4px 6px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+    #routeList li.completed {
+      background: green;
+      color: #fff;
+    }
     #kantoMap {
       width: 100%;
       display: block;
@@ -65,6 +90,9 @@
   <div id="mapContainer">
     <img src="{{ url_for('static', filename='kanto.png') }}" id="kantoMap" alt="Kanto Map">
     <div id="markers"></div>
+    <div id="routePanel">
+      <ul id="routeList"></ul>
+    </div>
   </div>
 
   <div class="modal" id="modal">
@@ -83,9 +111,28 @@
     const pokemonList = document.getElementById('pokemonList');
     const markComplete = document.getElementById('markComplete');
     const closeModal = document.getElementById('closeModal');
-  
+    const routeList = document.getElementById('routeList');
+
     let currentRoute = null;
-  
+
+    function updateUI(routeId) {
+      const marker = document.getElementById(`route-${routeId}`);
+      const item = document.getElementById(`route-item-${routeId}`);
+      if (marker) marker.classList.add('completed');
+      if (item) item.classList.add('completed');
+    }
+
+    function markRouteComplete(routeId) {
+      fetch('/api/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route_id: routeId })
+      }).then(() => {
+        updateUI(routeId);
+        modal.style.display = 'none';
+      });
+    }
+
     // Fetch route data from Flask backend
     fetch('/api/routes')
       .then(res => res.json())
@@ -113,7 +160,25 @@
             modal.style.display = 'flex';
           };
 
+          marker.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            markRouteComplete(route.id);
+          });
+
           markersDiv.appendChild(marker);
+
+          const li = document.createElement('li');
+          li.textContent = route.name;
+          li.id = `route-item-${route.id}`;
+          if (route.completed) li.classList.add('completed');
+          li.onclick = () => {
+            marker.click();
+          };
+          li.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            markRouteComplete(route.id);
+          });
+          routeList.appendChild(li);
         });
       });
   
@@ -132,16 +197,7 @@
     // Mark current route as completed
     markComplete.onclick = () => {
       if (!currentRoute) return;
-  
-      fetch('/api/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ route_id: currentRoute.id })
-      }).then(() => {
-        const routeMarker = document.getElementById(`route-${currentRoute.id}`);
-        routeMarker.classList.add('completed');
-        modal.style.display = 'none';
-      });
+      markRouteComplete(currentRoute.id);
     };
   </script>
   
